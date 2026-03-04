@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>Данные таблицы</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #1a1b26;
+            color: #c0caf5;
+        }
+        .header {
+            padding: 12px 20px;
+            background: #16161e;
+            border-bottom: 1px solid #363b54;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+        .nav-links { display: flex; gap: 16px; align-items: center; }
+        .nav-links a { color: #7aa2f7; text-decoration: none; }
+        .nav-links a:hover { text-decoration: underline; }
+        .nav-links a.active { color: #c0caf5; font-weight: 600; }
+        .toolbar {
+            padding: 16px 20px;
+            background: #16161e;
+            border-bottom: 1px solid #363b54;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .toolbar input[type="text"] {
+            padding: 10px 14px;
+            min-width: 200px;
+            border: 1px solid #363b54;
+            border-radius: 8px;
+            background: #24283b;
+            color: #c0caf5;
+            font-size: 0.95rem;
+        }
+        .toolbar input:focus { outline: none; border-color: #7aa2f7; }
+        .toolbar label { color: #a9b1d6; font-size: 0.9rem; }
+        .toolbar input[type="number"] {
+            width: 70px;
+            padding: 8px 10px;
+            border: 1px solid #363b54;
+            border-radius: 8px;
+            background: #24283b;
+            color: #c0caf5;
+        }
+        .toolbar button {
+            padding: 10px 18px;
+            background: #7aa2f7;
+            color: #1a1b26;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .toolbar button:hover { background: #89b4fa; }
+        .toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .content {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+        .table-scroll-wrap {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: scroll;
+            border-radius: 10px;
+            border: 1px solid #363b54;
+        }
+        .data-table {
+            width: 100%;
+            min-width: min-content;
+            border-collapse: collapse;
+            background: #24283b;
+            border-radius: 10px;
+            border: 1px solid #363b54;
+        }
+        .data-table th, .data-table td {
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1px solid #363b54;
+            white-space: nowrap;
+        }
+        .data-table th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #3d59a1;
+            color: #c0caf5;
+            font-weight: 600;
+            font-size: 0.85rem;
+            box-shadow: 0 1px 0 0 #363b54;
+        }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:hover td { background: #1f2335; }
+        .data-table td { font-size: 0.9rem; color: #a9b1d6; }
+        .empty-msg, .error-msg {
+            text-align: center;
+            color: #565f89;
+            padding: 2rem;
+        }
+        .error-msg { color: #f7768e; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>Данные таблицы</h1>
+        <nav class="nav-links">
+            <a href="{% url 'chat' %}">Чат</a>
+            <a href="{% url 'table_data' %}" class="active">Данные таблицы</a>
+        </nav>
+    </header>
+    <div class="toolbar">
+        <label for="tableName">Имя таблицы:</label>
+        <input type="text" id="tableName" placeholder="Например: DISHGROUPS или dbo.ORDERS" list="tablesList">
+        <datalist id="tablesList"></datalist>
+        <label for="limit">Записей:</label>
+        <input type="number" id="limit" min="1" max="1000" value="10">
+        <button type="button" id="loadBtn">Выгрузить</button>
+    </div>
+    <div class="content">
+        <div class="empty-msg" id="emptyMsg">Введите имя таблицы и нажмите «Выгрузить» (по умолчанию 10 записей).</div>
+        <div class="error-msg" id="errorMsg" style="display:none;"></div>
+        <div id="tableWrap" class="table-scroll-wrap" style="display:none;"></div>
+    </div>
+
+    <script>
+        (function() {
+            const tableNameEl = document.getElementById('tableName');
+            const limitEl = document.getElementById('limit');
+            const loadBtn = document.getElementById('loadBtn');
+            const emptyMsg = document.getElementById('emptyMsg');
+            const errorMsg = document.getElementById('errorMsg');
+            const tableWrap = document.getElementById('tableWrap');
+            const datalist = document.getElementById('tablesList');
+
+            function showEmpty() {
+                emptyMsg.style.display = 'block';
+                errorMsg.style.display = 'none';
+                tableWrap.style.display = 'none';
+            }
+            function showError(text) {
+                emptyMsg.style.display = 'none';
+                errorMsg.style.display = 'block';
+                errorMsg.textContent = text;
+                tableWrap.style.display = 'none';
+            }
+            function showTable(columns, rows) {
+                emptyMsg.style.display = 'none';
+                errorMsg.style.display = 'none';
+                tableWrap.style.display = 'block';
+                let html = '<table class="data-table"><thead><tr>';
+                columns.forEach(function(col) {
+                    html += '<th>' + escapeHtml(col) + '</th>';
+                });
+                html += '</tr></thead><tbody>';
+                rows.forEach(function(row) {
+                    html += '<tr>';
+                    row.forEach(function(cell) {
+                        html += '<td>' + escapeHtml(cell != null ? String(cell) : '') + '</td>';
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                tableWrap.innerHTML = html;
+            }
+            function escapeHtml(s) {
+                var el = document.createElement('div');
+                el.textContent = s;
+                return el.innerHTML;
+            }
+
+            fetch('/api/tables/')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.tables && data.tables.length) {
+                        data.tables.forEach(function(t) {
+                            var opt = document.createElement('option');
+                            opt.value = t;
+                            datalist.appendChild(opt);
+                        });
+                    }
+                })
+                .catch(function() {});
+
+            loadBtn.addEventListener('click', function() {
+                var name = tableNameEl.value.trim();
+                if (!name) {
+                    showError('Введите имя таблицы.');
+                    return;
+                }
+                var limit = parseInt(limitEl.value, 10) || 10;
+                limit = Math.min(1000, Math.max(1, limit));
+                loadBtn.disabled = true;
+                fetch('/api/table-data/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : ''
+                    },
+                    body: JSON.stringify({ table_name: name, limit: limit })
+                })
+                .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, json: j }; }); })
+                .then(function(res) {
+                    loadBtn.disabled = false;
+                    if (!res.ok) {
+                        showError(res.json.error || 'Ошибка загрузки.');
+                        return;
+                    }
+                    showTable(res.json.columns, res.json.rows);
+                })
+                .catch(function() {
+                    loadBtn.disabled = false;
+                    showError('Ошибка запроса.');
+                });
+            });
+            tableNameEl.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') loadBtn.click();
+            });
+        })();
+    </script>
+</body>
+</html>

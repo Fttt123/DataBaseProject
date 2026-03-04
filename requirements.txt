@@ -1,0 +1,6 @@
+Django>=5.2
+python-dotenv>=1.0
+pymssql>=2.2
+sshtunnel>=0.4
+paramiko>=2.12,<3.0
+openai>=1.0
